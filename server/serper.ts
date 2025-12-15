@@ -248,7 +248,7 @@ export async function trackLocalRanking(
       body: JSON.stringify({
         q: keyword,
         gl: countryCode.toLowerCase(),
-        num: 10,
+        num: 50,
       }),
     });
 
