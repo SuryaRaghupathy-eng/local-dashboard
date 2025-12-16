@@ -16,6 +16,7 @@ import {
   ArrowDown,
   Minus,
   Clock,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +50,15 @@ import { Label } from "@/components/ui/label";
 
 function getCountryName(code: string): string {
   return countries.find((c) => c.code === code)?.name || code;
+}
+
+function downloadCSV(filename: string, csvContent: string) {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function getDomainFromUrl(url: string): string {
@@ -273,6 +283,80 @@ export default function ProjectDashboard() {
       });
     },
   });
+
+  const exportOrganicRankings = () => {
+    if (!project || !displayRanking) return;
+    
+    const headers = ['Keyword', 'Position', 'Page', 'Position on Page', 'URL', 'Found', 'Checked At'];
+    const rows = project.keywords?.map((keyword) => {
+      const ranking = displayRanking.rankings.find(r => r.keywordId === keyword.id);
+      return [
+        `"${keyword.text}"`,
+        ranking?.position ?? 'N/A',
+        ranking?.page ?? 'N/A',
+        ranking?.positionOnPage ?? 'N/A',
+        ranking?.url ? `"${ranking.url}"` : 'N/A',
+        ranking?.found ? 'Yes' : 'No',
+        new Date(displayRanking.checkedAt).toLocaleString()
+      ].join(',');
+    }) || [];
+    
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const filename = `organic-rankings-${project.name.replace(/\s+/g, '-').toLowerCase()}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    downloadCSV(filename, csvContent);
+    
+    toast({
+      title: "Export complete",
+      description: "Organic rankings have been exported to CSV.",
+    });
+  };
+
+  const exportLocalRankings = () => {
+    if (!project || !latestLocalRanking) return;
+    
+    const headers = ['Keyword', 'Found in Local Pack', 'Position', 'Business Name', 'Address', 'Rating', 'Reviews', 'Website', 'Checked At'];
+    const rows: string[] = [];
+    
+    project.keywords?.forEach((keyword) => {
+      const ranking = latestLocalRanking.rankings.find(r => r.keywordId === keyword.id);
+      if (ranking?.found && ranking.matchingPlaces.length > 0) {
+        ranking.matchingPlaces.forEach((place) => {
+          rows.push([
+            `"${keyword.text}"`,
+            'Yes',
+            place.position,
+            `"${place.title}"`,
+            place.address ? `"${place.address}"` : 'N/A',
+            place.rating ?? 'N/A',
+            place.reviews ?? 'N/A',
+            place.website ? `"${place.website}"` : 'N/A',
+            new Date(latestLocalRanking.checkedAt).toLocaleString()
+          ].join(','));
+        });
+      } else {
+        rows.push([
+          `"${keyword.text}"`,
+          'No',
+          'N/A',
+          'N/A',
+          'N/A',
+          'N/A',
+          'N/A',
+          'N/A',
+          ranking ? new Date(latestLocalRanking.checkedAt).toLocaleString() : 'Not checked'
+        ].join(','));
+      }
+    });
+    
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const filename = `local-rankings-${project.name.replace(/\s+/g, '-').toLowerCase()}-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    downloadCSV(filename, csvContent);
+    
+    toast({
+      title: "Export complete",
+      description: "Local rankings have been exported to CSV.",
+    });
+  };
 
   if (isLoading) {
     return <LoadingSkeleton />;
@@ -629,6 +713,17 @@ export default function ProjectDashboard() {
                         </div>
                       </PopoverContent>
                     </Popover>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="gap-1" 
+                      data-testid="button-export-organic"
+                      onClick={exportOrganicRankings}
+                      disabled={!displayRanking || keywordCount === 0}
+                    >
+                      <Download className="h-4 w-4" />
+                      Export
+                    </Button>
                     <Link href={`/projects/${id}/keywords`}>
                       <Button variant="ghost" size="sm" className="gap-1" data-testid="button-add-keyword">
                         <Plus className="h-4 w-4" />
@@ -750,6 +845,17 @@ export default function ProjectDashboard() {
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="gap-1" 
+                      data-testid="button-export-local"
+                      onClick={exportLocalRankings}
+                      disabled={!latestLocalRanking || keywordCount === 0}
+                    >
+                      <Download className="h-4 w-4" />
+                      Export
+                    </Button>
                     <Button 
                       size="sm" 
                       className="gap-2" 
