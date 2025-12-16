@@ -227,6 +227,38 @@ export interface LocalRankingSearchResult {
   error?: string;
 }
 
+async function fetchPlacesPage(
+  keyword: string,
+  countryCode: string,
+  page: number,
+  apiKey: string
+): Promise<{ places: SerperPlacesResponse["places"]; hasResults: boolean }> {
+  const response = await fetch(SERPER_PLACES_API_URL, {
+    method: "POST",
+    headers: {
+      "X-API-KEY": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      q: keyword,
+      gl: countryCode.toLowerCase(),
+      page: page,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Serper API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data: SerperPlacesResponse = await response.json();
+  const places = data.places || [];
+  
+  return {
+    places,
+    hasResults: places.length > 0,
+  };
+}
+
 export async function trackLocalRanking(
   keyword: string,
   targetDomain: string,
@@ -238,47 +270,40 @@ export async function trackLocalRanking(
     throw new Error("SERPER_API_KEY environment variable is not set");
   }
 
+  const allPlaces: SerperPlacesResponse["places"] = [];
+  const matchingPlaces: LocalRankingSearchResult["matchingPlaces"] = [];
+  let totalPositionCount = 0;
+
   try {
-    const response = await fetch(SERPER_PLACES_API_URL, {
-      method: "POST",
-      headers: {
-        "X-API-KEY": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        q: keyword,
-        gl: countryCode.toLowerCase(),
-        num: 50,
-      }),
-    });
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const { places, hasResults } = await fetchPlacesPage(keyword, countryCode, page, apiKey);
+      
+      if (!hasResults) {
+        break;
+      }
 
-    if (!response.ok) {
-      throw new Error(`Serper API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data: SerperPlacesResponse = await response.json();
-    
-    const places = data.places || [];
-    const matchingPlaces: LocalRankingSearchResult["matchingPlaces"] = [];
-
-    for (let i = 0; i < places.length; i++) {
-      const place = places[i];
-      if (place.website && domainMatches(place.website, targetDomain)) {
-        matchingPlaces.push({
-          title: place.title,
-          address: place.address || null,
-          website: place.website || null,
-          rating: place.rating || null,
-          reviews: place.ratingCount || null,
-          position: i + 1,
-        });
+      for (let i = 0; i < places.length; i++) {
+        totalPositionCount += 1;
+        const place = places[i];
+        allPlaces.push(place);
+        
+        if (place.website && domainMatches(place.website, targetDomain)) {
+          matchingPlaces.push({
+            title: place.title,
+            address: place.address || null,
+            website: place.website || null,
+            rating: place.rating || null,
+            reviews: place.ratingCount || null,
+            position: totalPositionCount,
+          });
+        }
       }
     }
 
     return {
       found: matchingPlaces.length > 0,
       keyword,
-      totalPlaces: places.length,
+      totalPlaces: allPlaces.length,
       matchingPlaces,
     };
   } catch (error) {
@@ -287,8 +312,8 @@ export async function trackLocalRanking(
     return {
       found: false,
       keyword,
-      totalPlaces: 0,
-      matchingPlaces: [],
+      totalPlaces: allPlaces.length,
+      matchingPlaces,
       error: errorMessage,
     };
   }
